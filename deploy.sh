@@ -498,13 +498,13 @@ scroll_up 8
 CONTAINER_CHECK=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker ps --format '{{.Names}}'" </dev/null 2>/dev/null || echo "")
 
 CONTAINERS_OK=true
-for container in vllm embedding pgvector anythingllm; do
+for container in vllm embedding pgvector; do
     echo "$CONTAINER_CHECK" | grep -q "$container" || CONTAINERS_OK=false
 done
 
 if [ "$CONTAINERS_OK" = true ]; then
-    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector, AnythingLLM running"
-    echo "All containers are running (vLLM, TEI, pgvector, AnythingLLM)"
+    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector running"
+    echo "All containers are running (vLLM, TEI, pgvector)"
 else
     log_to_file "WARN" "Container check incomplete: $CONTAINER_CHECK"
     warn "Some containers may still be starting. Check manually with: docker ps"
@@ -523,6 +523,7 @@ while true; do
     if [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/api/ping" </dev/null 2>/dev/null || echo "000")" = "200" ]; then
         log_to_file "INFO" "AnythingLLM health check passed in ${ELAPSED}s"
         progress "$NC" "AnythingLLM is ready (took ${ELAPSED_STR})"
+        echo ""
 
         # Enable multi-user mode and create admin account
         ANYTHINGLLM_ADMIN_USER="admin"
@@ -531,7 +532,7 @@ while true; do
         MULTIUSER_RESPONSE=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/system/enable-multi-user' -H 'Content-Type: application/json' -d '{\"username\":\"${ANYTHINGLLM_ADMIN_USER}\",\"password\":\"${ANYTHINGLLM_ADMIN_PASS}\"}'" </dev/null 2>/dev/null || echo "{}")
 
         if echo "$MULTIUSER_RESPONSE" | grep -q '"success":true\|"user"'; then
-            log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created"
+            log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created (user: ${ANYTHINGLLM_ADMIN_USER}, pass: ${ANYTHINGLLM_ADMIN_PASS})"
             echo "AnythingLLM admin account created"
         else
             log_to_file "WARN" "Failed to enable multi-user mode: $MULTIUSER_RESPONSE"
@@ -550,7 +551,6 @@ while true; do
     fi
     sleep 2
 done
-echo ""
 echo ""
 
 print_msg "$YELLOW" "Waiting for vLLM to download gpt-oss model... (this may take 3-5 minutes)"
