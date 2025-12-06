@@ -523,34 +523,39 @@ while true; do
     if [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/api/ping" </dev/null 2>/dev/null || echo "000")" = "200" ]; then
         log_to_file "INFO" "AnythingLLM health check passed in ${ELAPSED}s"
         progress "$NC" "AnythingLLM is ready (took ${ELAPSED_STR})"
-        echo ""
-
-        # Enable multi-user mode and create admin account
-        ANYTHINGLLM_ADMIN_USER="admin"
-        ANYTHINGLLM_ADMIN_PASS=$(openssl rand -base64 8 | tr -dc 'a-zA-Z0-9' | head -c 8)
-
-        MULTIUSER_RESPONSE=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/system/enable-multi-user' -H 'Content-Type: application/json' -d '{\"username\":\"${ANYTHINGLLM_ADMIN_USER}\",\"password\":\"${ANYTHINGLLM_ADMIN_PASS}\"}'" </dev/null 2>/dev/null || echo "{}")
-
-        if echo "$MULTIUSER_RESPONSE" | grep -q '"success":true\|"user"'; then
-            log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created (user: ${ANYTHINGLLM_ADMIN_USER}, pass: ${ANYTHINGLLM_ADMIN_PASS})"
-            echo "AnythingLLM admin account created"
-        else
-            log_to_file "WARN" "Failed to enable multi-user mode: $MULTIUSER_RESPONSE"
-            warn "Could not create admin account automatically. You can set it up manually."
-            ANYTHINGLLM_ADMIN_USER=""
-            ANYTHINGLLM_ADMIN_PASS=""
-        fi
+        ANYTHINGLLM_READY=true
         break
     fi
     if [ $ELAPSED -ge 30 ]; then
         log_to_file "WARN" "AnythingLLM health check timeout after ${ELAPSED_STR}"
         warn "Timeout waiting for AnythingLLM health check. It may still be starting up."
-        ANYTHINGLLM_ADMIN_USER=""
-        ANYTHINGLLM_ADMIN_PASS=""
+        ANYTHINGLLM_READY=false
         break
     fi
     sleep 2
 done
+echo ""
+
+# Create default workspace & Enable multi-user mode and create admin account (if AnythingLLM is ready)
+ANYTHINGLLM_ADMIN_USER=""
+ANYTHINGLLM_ADMIN_PASS=""
+if [ "${ANYTHINGLLM_READY:-false}" = "true" ]; then
+    ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/v1/workspace/new' -H 'Content-Type: application/json' -d '{\"name\":\"RAG Example\",\"similarityThreshold\":0.7,\"topN\":5}'" </dev/null 2>/dev/null
+    log_to_file "INFO" "Default workspace 'RAG Example' created" && echo "Default workspace created"
+
+    ANYTHINGLLM_ADMIN_USER="admin"
+    ANYTHINGLLM_ADMIN_PASS=$(openssl rand -base64 8 | tr -dc 'a-zA-Z0-9' | head -c 8)
+    MULTIUSER_RESPONSE=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/system/enable-multi-user' -H 'Content-Type: application/json' -d '{\"username\":\"${ANYTHINGLLM_ADMIN_USER}\",\"password\":\"${ANYTHINGLLM_ADMIN_PASS}\"}'" </dev/null 2>/dev/null || echo "{}")
+    if echo "$MULTIUSER_RESPONSE" | grep -q '"success":true\|"user"'; then
+        log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created (user: ${ANYTHINGLLM_ADMIN_USER}, pass: ${ANYTHINGLLM_ADMIN_PASS})"
+        echo "AnythingLLM admin account created"
+    else
+        log_to_file "WARN" "Failed to enable multi-user mode: $MULTIUSER_RESPONSE"
+        warn "Could not create admin account automatically. You can set it up manually."
+        ANYTHINGLLM_ADMIN_USER=""
+        ANYTHINGLLM_ADMIN_PASS=""
+    fi
+fi
 echo ""
 
 print_msg "$YELLOW" "Waiting for vLLM to download gpt-oss model... (this may take 3-5 minutes)"
