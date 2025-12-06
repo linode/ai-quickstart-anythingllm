@@ -1,0 +1,124 @@
+services:
+
+  #--------------------------------------------
+  # vLLM
+  #--------------------------------------------
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    restart: unless-stopped
+    shm_size: 8g
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - vllm_data:/root/.cache/huggingface
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+    command:
+      - openai/gpt-oss-20b
+      - --gpu-memory-utilization=0.85
+      - --max-model-len=16384
+      - --max-num-seqs=4
+      - --enable-prompt-tokens-details
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "http://localhost:8000/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+
+  #--------------------------------------------
+  # vLLM Embedding Service
+  #--------------------------------------------
+  embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:89-1.8.3
+    container_name: embedding
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:80"
+    volumes:
+      - embedding_data:/data
+    command:
+      - --model-id=BAAI/bge-m3
+      - --dtype=float16
+      - --max-concurrent-requests=512
+      - --max-batch-tokens=16384
+      - --pooling=cls
+      - --auto-truncate
+      - --json-output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    shm_size: 1g
+
+  #--------------------------------------------
+  # AnythingLLM
+  #--------------------------------------------
+  anythingllm:
+    image: mintplexlabs/anythingllm:pg
+    container_name: anythingllm
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://vllm:8000/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=openai/gpt-oss-20b
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=16384
+      - EMBEDDING_ENGINE=localai
+      - EMBEDDING_BASE_PATH=http://embedding:80
+      - EMBEDDING_MODEL_PREF=BAAI/bge-m3
+      - EMBEDDING_MODEL_MAX_CHUNK_LENGTH=8192
+      - VECTOR_DB=pgvector
+      - PGVECTOR_CONNECTION_STRING="postgresql://anythingllm:anythingllm@pgvector:5432/anythingllm"
+      - DATABASE_URL=postgresql://anythingllm:anythingllm@pgvector:5432/anythingllm
+      - WHISPER_PROVIDER=local
+      - TTS_PROVIDER=native
+    volumes:
+      - anythingllm_data:/app/server/storage
+    depends_on:
+      pgvector:
+        condition: service_healthy
+
+  #--------------------------------------------
+  # pgvector - PostgreSQL with pgvector extension
+  #--------------------------------------------
+  pgvector:
+    image: pgvector/pgvector:0.8.1-pg18-bookworm
+    container_name: pgvector
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      - POSTGRES_USER=anythingllm
+      - POSTGRES_PASSWORD=anythingllm
+      - POSTGRES_DB=anythingllm
+    volumes:
+      - pgvector_base:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anythingllm -d anythingllm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  vllm_data:
+  embedding_data:
+  anythingllm_data:
+  pgvector_base:
