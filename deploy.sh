@@ -5,7 +5,7 @@ set -euo pipefail
 #==============================================================================
 # Akamai Cloud (Linode) GPU Instance Setup Script
 #
-# This script automates the creation of a GPU instance with vLLM and Open-WebUI
+# This script automates the creation of a GPU instance with RAG Stack + AnythingLLM
 #
 # Usage:
 #   ./deploy.sh                    # Run locally (from cloned repo)
@@ -18,6 +18,7 @@ readonly PROJECT_NAME="ai-quickstart-anythingllm"
 
 # Get directory of this script (empty if running via curl pipe)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}" 2>/dev/null)" 2>/dev/null && pwd 2>/dev/null || echo "")"
+ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
 
 # Remote repository base URLs (for downloading files when running remotely)
 REPO_RAW_BASE="https://raw.githubusercontent.com/linode/${PROJECT_NAME}/main"
@@ -82,8 +83,9 @@ _setup_required_files
 # Source quickstart tools library
 source "$QUICKSTART_TOOLS_PATH"
 
-# Log file setup
-LOG_FILE="${SCRIPT_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
+# Log file setup (use original script dir if available, otherwise current dir)
+LOG_DIR="${ORIGINAL_SCRIPT_DIR:-$(pwd)}"
+LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 
 # Colors and API_BASE are now exported by quickstart_tools.sh
 # RED, GREEN, YELLOW, BLUE, CYAN, NC, MAGENTA, BOLD, API_BASE
@@ -143,7 +145,7 @@ _error_exit_with_cleanup() {
 show_banner
 
 print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-print_msg "$BOLD" "                  AI Quickstart gpt-oss-20b LLM"
+print_msg "$BOLD" "          AI Quickstart : RAG Stack with AnythingLLM"
 print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 print_msg "$YELLOW" "This script will:"
@@ -151,9 +153,10 @@ echo "  • Ask you to authenticate with your Linode/Akamai Cloud account"
 echo "  • Deploy a fully configured GPU instance in your account with:"
 echo "    - Docker and Docker Compose"
 echo "    - NVIDIA drivers and Container Toolkit"
-echo "    - vLLM (LLM inference server)"
-echo "    - Pre-loaded model: openai/gpt-oss-20b"
-echo "    - Open-WebUI (web interface)"
+echo "    - vLLM (LLM inference server with openai/gpt-oss-20b)"
+echo "    - Text Embeddings Inference (BAAI/bge-m3)"
+echo "    - pgvector (PostgreSQL vector database)"
+echo "    - AnythingLLM (RAG-enabled AI workspace)"
 echo ""
 print_msg "$GREEN" "Setup time: ~10-15 minutes"
 print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -494,16 +497,21 @@ scroll_up 8
 
 CONTAINER_CHECK=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker ps --format '{{.Names}}'" </dev/null 2>/dev/null || echo "")
 
-if echo "$CONTAINER_CHECK" | grep -q "vllm" && echo "$CONTAINER_CHECK" | grep -q "open-webui"; then
-    log_to_file "INFO" "Docker containers verified: vLLM and Open-WebUI running"
-    echo "Both vLLM and Open-WebUI containers are running"
+CONTAINERS_OK=true
+for container in vllm embedding pgvector anythingllm; do
+    echo "$CONTAINER_CHECK" | grep -q "$container" || CONTAINERS_OK=false
+done
+
+if [ "$CONTAINERS_OK" = true ]; then
+    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector, AnythingLLM running"
+    echo "All containers are running (vLLM, TEI, pgvector, AnythingLLM)"
 else
     log_to_file "WARN" "Container check incomplete: $CONTAINER_CHECK"
     warn "Some containers may still be starting. Check manually with: docker ps"
 fi
 echo ""
 
-print_msg "$YELLOW" "Waiting for Open-WebUI to be ready..."
+print_msg "$YELLOW" "Waiting for AnythingLLM to be ready..."
 scroll_up 8
 START_TIME=$(date +%s)
 
@@ -512,14 +520,32 @@ while true; do
     ELAPSED_STR=$([ $ELAPSED -ge 60 ] && echo "$((ELAPSED / 60))m $((ELAPSED % 60))s" || echo "${ELAPSED}s")
     progress "$YELLOW" "Status: starting ... Elapsed: ${ELAPSED_STR}"
 
-    if [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/health" </dev/null 2>/dev/null || echo "000")" = "200" ]; then
-        log_to_file "INFO" "Open-WebUI health check passed in ${ELAPSED}s"
-        progress "$NC" "Open-WebUI is ready (took ${ELAPSED_STR})"
+    if [ "$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/api/ping" </dev/null 2>/dev/null || echo "000")" = "200" ]; then
+        log_to_file "INFO" "AnythingLLM health check passed in ${ELAPSED}s"
+        progress "$NC" "AnythingLLM is ready (took ${ELAPSED_STR})"
+
+        # Enable multi-user mode and create admin account
+        ANYTHINGLLM_ADMIN_USER="admin"
+        ANYTHINGLLM_ADMIN_PASS=$(openssl rand -base64 8 | tr -dc 'a-zA-Z0-9' | head -c 8)
+
+        MULTIUSER_RESPONSE=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/system/enable-multi-user' -H 'Content-Type: application/json' -d '{\"username\":\"${ANYTHINGLLM_ADMIN_USER}\",\"password\":\"${ANYTHINGLLM_ADMIN_PASS}\"}'" </dev/null 2>/dev/null || echo "{}")
+
+        if echo "$MULTIUSER_RESPONSE" | grep -q '"success":true\|"user"'; then
+            log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created"
+            echo "AnythingLLM admin account created"
+        else
+            log_to_file "WARN" "Failed to enable multi-user mode: $MULTIUSER_RESPONSE"
+            warn "Could not create admin account automatically. You can set it up manually."
+            ANYTHINGLLM_ADMIN_USER=""
+            ANYTHINGLLM_ADMIN_PASS=""
+        fi
         break
     fi
     if [ $ELAPSED -ge 30 ]; then
-        log_to_file "WARN" "Open-WebUI health check timeout after ${ELAPSED_STR}"
-        warn "Timeout waiting for Open-WebUI health check. It may still be starting up."
+        log_to_file "WARN" "AnythingLLM health check timeout after ${ELAPSED_STR}"
+        warn "Timeout waiting for AnythingLLM health check. It may still be starting up."
+        ANYTHINGLLM_ADMIN_USER=""
+        ANYTHINGLLM_ADMIN_PASS=""
         break
     fi
     sleep 2
@@ -567,32 +593,45 @@ echo "   IP Address:     $INSTANCE_IP"
 echo "   Region:         $SELECTED_REGION"
 echo "   Instance Type:  $SELECTED_TYPE"
 echo ""
-print_msg "$CYAN" "🔐 Access Credentials:"
+print_msg "$CYAN" "🌐 AnythingLLM Access:"
+printf "   URL:         ${BOLD}http://${INSTANCE_IP}:3001${NC}\n"
+if [ -n "${ANYTHINGLLM_ADMIN_USER:-}" ]; then
+    echo "   Username:    ${ANYTHINGLLM_ADMIN_USER}"
+    echo "   Password:    ${ANYTHINGLLM_ADMIN_PASS}"
+else
+    echo "   (Create admin account on first login)"
+fi
+echo ""
+print_msg "$CYAN" "🔐 SSH Access:"
 if [ -n "${NEW_KEY_PATH:-}" ]; then
     echo "   SSH:         ssh -i ${NEW_KEY_PATH} root@${INSTANCE_IP}"
     echo "   SSH Key:     ${NEW_KEY_PATH}"
 else
     echo "   SSH:         ssh root@${INSTANCE_IP}"
 fi
-echo "   Password:    ${INSTANCE_PASSWORD}"
+echo "   Root Pass:   ${INSTANCE_PASSWORD}"
 echo ""
 print_msg "$CYAN" "📋 Execution Log:"
-echo "   Log file:       $LOG_FILE"
+echo "   Log file:    $LOG_FILE"
 echo ""
 print_msg "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 print_msg "$YELLOW" "💡 Next Steps:"
-printf "   1. 🌐 Access Open-WebUI: ${CYAN}http://${INSTANCE_IP}:3000${NC}\n"
-echo "   2. Create admin user account (your account data is stored only on your instance)"
-echo "   3. Start chatting with the model running on your GPU instance !!"
+printf "   1. 🌐 Open AnythingLLM: ${CYAN}http://${INSTANCE_IP}:3001${NC}\n"
+if [ -n "${ANYTHINGLLM_ADMIN_USER:-}" ]; then
+    echo "   2. Login with the admin credentials shown above"
+else
+    echo "   2. Create your admin account on first login"
+fi
+echo "   3. Start chatting with your RAG-enabled AI workspace !!"
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"
 printf "   Docker Compose: ${CYAN}/opt/${PROJECT_NAME}/docker-compose.yml${NC}\n"
-echo "   Services: vLLM (port 8000) + OpenWebUI (port 3000)"
+echo "   Services: vLLM (8000) + TEI (8001) + pgvector (5432) + AnythingLLM (3001)"
 echo ""
 echo ""
-echo "🚀 Enjoy your AI Quickstart gpt-oss-20b on Akamai Cloud !!"
+echo "🚀 Enjoy your RAG Stack with AnythingLLM on Akamai Cloud !!"
 echo ""
 echo ""
 log_to_file "INFO" "Deployment completed successfully"
-log_to_file "INFO" "Instance URL: http://${INSTANCE_IP}:3000"
+log_to_file "INFO" "Instance URL: http://${INSTANCE_IP}:3001"
