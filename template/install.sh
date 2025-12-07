@@ -95,5 +95,5 @@ if [ -f "/lib/modules/${CURRENT_KERNEL}/kernel/nvidia-580-open/nvidia.ko" ] || \
     fi
 fi
 
-notify "🔄 Rebooting to load NVIDIA drivers... 🚀 vLLM & OpenWebUI setup will start after reboot"
+notify "🔄 Rebooting to load NVIDIA drivers... 🚀 vLLM & AnythingLLM setup will start after reboot"
 reboot

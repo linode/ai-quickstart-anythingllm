@@ -41,12 +41,25 @@ That's it! The script will download required files and guide you through the int
 | <img src="https://wiki.postgresql.org/images/a/a4/PostgreSQL_logo.3colors.svg" alt="pgvector" width="32"/> | **pgvector** | PostgreSQL with vector similarity search extension for RAG storage (port 5432, internal) |
 | <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/anything-llm.png" alt="AnythingLLM" width="32"/> | **AnythingLLM** | Full-stack AI application with RAG, document chat, agents, and multi-user support (port 3001) |
 
+### Models
+
+#### LLM: openai/gpt-oss-20b
+[gpt-oss-20b](https://huggingface.co/openai/gpt-oss-20b) is OpenAI's first fully open-source LLM, released under Apache 2.0 license. Key characteristics:
+- **20B parameters**: Fits on a single RTX 4000 Ada GPU (20GB VRAM)
+- **High benchmark scores**: Competitive with larger models on reasoning and instruction-following tasks
+- **High throughput**: Optimized for fast token generation with vLLM inference engine
+
+#### Embedding: BAAI/bge-m3
+[BGE-M3](https://huggingface.co/BAAI/bge-m3) is a state-of-the-art multilingual embedding model. Key strengths:
+- **Multilingual**: Supports 100+ languages with strong cross-lingual retrieval
+- **Multi-functionality**: Supports dense, sparse (lexical), and multi-vector retrieval in one model
+- **Top performance**: Ranked #1 on MTEB multilingual leaderboard at release
+
 ### What is AnythingLLM?
 [AnythingLLM](https://anythingllm.com/) is an open-source, full-stack application that turns any document, resource, or content into context for any LLM. Key features include:
 - **Document Intelligence**: Upload PDFs, Word docs, websites, and more - chat with your data instantly
 - **Vector Database**: Uses pgvector (PostgreSQL) for scalable, production-grade vector storage
 - **Multi-user Workspaces**: Create isolated workspaces for different projects or teams
-- **AI Agents**: Build custom agents with browsing, code execution, and RAG capabilities
 - **Privacy-First**: All data stays on your infrastructure - nothing leaves your server
 
 ### RAG Pipeline Components
@@ -168,8 +181,6 @@ The script will show instance details and ask for confirmation before deletion.
 ai-quickstart-anythingllm/
 ├── deploy.sh                    # Main deployment script
 ├── delete.sh                    # Instance deletion script
-├── script/
-│   └── quickstart_tools.sh      # Shared functions (API, OAuth, utilities)
 └── template/
     ├── cloud-init.yaml          # Cloud-init configuration
     ├── docker-compose.yml       # Docker Compose configuration

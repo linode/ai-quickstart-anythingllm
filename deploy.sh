@@ -30,26 +30,24 @@ REMOTE_TEMP_DIR=""
 #==============================================================================
 # Setup: Ensure required files exist (download if running remotely)
 #==============================================================================
+# _dl - Get file from local or download from remote
+# Usage: path=$(_dl <local_dir> <file_path> <repo_base_url> <temp_dir> [silent])
+# Returns: path to file (local or downloaded), empty if download fails
+_dl() {
+    local ld="$1" fp="$2" url="$3" td="$4"
+    [ -n "$ld" ] && [ -f "${ld}/${fp}" ] && { echo "${ld}/${fp}"; return; }
+    local dest="${td}/${fp}"; mkdir -p "$(dirname "$dest")"
+    echo "Downloading ${fp}..." >&2
+    curl -fsSL "${url}/${fp}" -o "$dest" 2>/dev/null && echo "$dest"
+}
+
 _setup_required_files() {
-    local f
     REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
 
-    # For each required file: use local if exists, otherwise download
-    for f in script/quickstart_tools.sh template/cloud-init.yaml template/docker-compose.yml template/install.sh; do
-        if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/$f" ]; then
-            continue  # Local file exists
-        fi
-        # Download from remote
-        local url="$REPO_RAW_BASE/$f"
-        [ "$f" = "script/quickstart_tools.sh" ] && url="${TOOLS_RAW_BASE}/$f"
-        mkdir -p "${REMOTE_TEMP_DIR}/$(dirname "$f")"
-        echo "Downloading $f..."
-        curl -fsSL "$url" -o "${REMOTE_TEMP_DIR}/$f" || { echo "ERROR: Failed to download $f" >&2; exit 1; }
+    QUICKSTART_TOOLS_PATH=$(_dl "$SCRIPT_DIR" "script/quickstart_tools.sh" "$TOOLS_RAW_BASE" "$REMOTE_TEMP_DIR") || { echo "ERROR: Failed to get quickstart_tools.sh" >&2; exit 1; }
+    local f; for f in cloud-init.yaml docker-compose.yml install.sh; do
+        _dl "$SCRIPT_DIR" "template/$f" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get $f" >&2; exit 1; }
     done
-
-    # Set paths (prefer local, fallback to downloaded)
-    local base="${SCRIPT_DIR:-$REMOTE_TEMP_DIR}"
-    QUICKSTART_TOOLS_PATH="${SCRIPT_DIR}/script/quickstart_tools.sh"; [ -f "$QUICKSTART_TOOLS_PATH" ] || QUICKSTART_TOOLS_PATH="${REMOTE_TEMP_DIR}/script/quickstart_tools.sh"
     TEMPLATE_DIR="${SCRIPT_DIR}/template"; [ -d "$TEMPLATE_DIR" ] && [ -f "$TEMPLATE_DIR/cloud-init.yaml" ] || TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
 
     export QUICKSTART_TOOLS_PATH TEMPLATE_DIR
