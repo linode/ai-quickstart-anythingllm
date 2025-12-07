@@ -96,6 +96,8 @@ services:
     depends_on:
       pgvector:
         condition: service_healthy
+      embedding:
+        condition: service_healthy
 
   #--------------------------------------------
   # pgvector - PostgreSQL with pgvector extension
