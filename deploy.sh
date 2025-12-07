@@ -31,36 +31,26 @@ REMOTE_TEMP_DIR=""
 # Setup: Ensure required files exist (download if running remotely)
 #==============================================================================
 _setup_required_files() {
-    local template_files=("template/cloud-init.yaml" "template/docker-compose.yml" "template/install.sh")
-    local all_exist=true
+    local f
+    REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
 
-    # Check if all required files exist locally
-    [ -z "$SCRIPT_DIR" ] && all_exist=false
-    [ ! -f "${SCRIPT_DIR}/script/quickstart_tools.sh" ] && all_exist=false
-    for f in "${template_files[@]}"; do [ ! -f "${SCRIPT_DIR}/$f" ] && all_exist=false; done
+    # For each required file: use local if exists, otherwise download
+    for f in script/quickstart_tools.sh template/cloud-init.yaml template/docker-compose.yml template/install.sh; do
+        if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/$f" ]; then
+            continue  # Local file exists
+        fi
+        # Download from remote
+        local url="$REPO_RAW_BASE/$f"
+        [ "$f" = "script/quickstart_tools.sh" ] && url="${TOOLS_RAW_BASE}/$f"
+        mkdir -p "${REMOTE_TEMP_DIR}/$(dirname "$f")"
+        echo "Downloading $f..."
+        curl -fsSL "$url" -o "${REMOTE_TEMP_DIR}/$f" || { echo "ERROR: Failed to download $f" >&2; exit 1; }
+    done
 
-    if [ "$all_exist" = true ]; then
-        TEMPLATE_DIR="${SCRIPT_DIR}/template"
-        QUICKSTART_TOOLS_PATH="${SCRIPT_DIR}/script/quickstart_tools.sh"
-    else
-        # Download required files to temp directory
-        echo "Downloading required files..."
-        REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
-        mkdir -p "${REMOTE_TEMP_DIR}/template" "${REMOTE_TEMP_DIR}/script"
-
-        # Download quickstart_tools.sh from shared tools repo
-        curl -fsSL "${TOOLS_RAW_BASE}/script/quickstart_tools.sh" -o "${REMOTE_TEMP_DIR}/script/quickstart_tools.sh" || { echo "ERROR: Failed to download script/quickstart_tools.sh" >&2; exit 1; }
-
-        # Download template files from this project's repo
-        for f in "${template_files[@]}"; do
-            curl -fsSL "${REPO_RAW_BASE}/$f" -o "${REMOTE_TEMP_DIR}/$f" || { echo "ERROR: Failed to download $f" >&2; exit 1; }
-        done
-
-        SCRIPT_DIR="$REMOTE_TEMP_DIR"
-        TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
-        QUICKSTART_TOOLS_PATH="${REMOTE_TEMP_DIR}/script/quickstart_tools.sh"
-        echo "Required files downloaded successfully."
-    fi
+    # Set paths (prefer local, fallback to downloaded)
+    local base="${SCRIPT_DIR:-$REMOTE_TEMP_DIR}"
+    QUICKSTART_TOOLS_PATH="${SCRIPT_DIR}/script/quickstart_tools.sh"; [ -f "$QUICKSTART_TOOLS_PATH" ] || QUICKSTART_TOOLS_PATH="${REMOTE_TEMP_DIR}/script/quickstart_tools.sh"
+    TEMPLATE_DIR="${SCRIPT_DIR}/template"; [ -d "$TEMPLATE_DIR" ] && [ -f "$TEMPLATE_DIR/cloud-init.yaml" ] || TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
 
     export QUICKSTART_TOOLS_PATH TEMPLATE_DIR
 }
@@ -536,24 +526,35 @@ while true; do
 done
 echo ""
 
-# Create default workspace & Enable multi-user mode and create admin account (if AnythingLLM is ready)
+# Configure AnythingLLM: API key, workspace, sample document, and admin account
 ANYTHINGLLM_ADMIN_USER=""
 ANYTHINGLLM_ADMIN_PASS=""
 if [ "${ANYTHINGLLM_READY:-false}" = "true" ]; then
-    ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/v1/workspace/new' -H 'Content-Type: application/json' -d '{\"name\":\"RAG Example\",\"similarityThreshold\":0.7,\"topN\":5}'" </dev/null 2>/dev/null
-    log_to_file "INFO" "Default workspace 'RAG Example' created" && echo "Default workspace created"
+    # Helper for AnythingLLM API calls: allm_api <endpoint> <api_key> <json_data>
+    allm_api() { ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001$1' -H 'Content-Type: application/json' ${2:+-H \"Authorization: Bearer $2\"} -d '$3'" </dev/null 2>/dev/null || echo "{}"; }
 
+    # Generate API key, create workspace, add sample document, and update embeddings
+    API_KEY=$(allm_api "/api/system/generate-api-key" "" "{}" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
+    if [ -n "$API_KEY" ]; then
+        log_to_file "INFO" "AnythingLLM API key generated" && echo "API key generated"
+        if allm_api "/api/v1/workspace/new" "$API_KEY" '{"name":"RAG Example","similarityThreshold":0.7,"topN":5}' | grep -q '"workspace"'; then
+            log_to_file "INFO" "Default workspace 'RAG Example' created" && echo "Default workspace created"
+            DOC_LOC=$(allm_api "/api/v1/document/upload-link" "$API_KEY" '{"link":"https://www.kdnuggets.com/anythingllm-the-llm-application-youve-been-waiting-for","addToWorkspaces":"rag-example"}' | grep -o '"location":"[^"]*"' | head -1 | cut -d'"' -f4)
+            if [ -n "$DOC_LOC" ]; then
+                log_to_file "INFO" "Sample document uploaded" && echo "Sample document added"
+                allm_api "/api/v1/workspace/rag-example/update-embeddings" "$API_KEY" "{\"adds\":[\"$DOC_LOC\"]}" | grep -q '"workspace"' && log_to_file "INFO" "Document embedded" && echo "Document embedded in workspace"
+            fi
+        fi
+    fi
+
+    # Enable multi-user mode and create admin account (last step)
     ANYTHINGLLM_ADMIN_USER="admin"
     ANYTHINGLLM_ADMIN_PASS=$(openssl rand -base64 8 | tr -dc 'a-zA-Z0-9' | head -c 8)
-    MULTIUSER_RESPONSE=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001/api/system/enable-multi-user' -H 'Content-Type: application/json' -d '{\"username\":\"${ANYTHINGLLM_ADMIN_USER}\",\"password\":\"${ANYTHINGLLM_ADMIN_PASS}\"}'" </dev/null 2>/dev/null || echo "{}")
-    if echo "$MULTIUSER_RESPONSE" | grep -q '"success":true\|"user"'; then
-        log_to_file "INFO" "AnythingLLM multi-user mode enabled, admin account created (user: ${ANYTHINGLLM_ADMIN_USER}, pass: ${ANYTHINGLLM_ADMIN_PASS})"
-        echo "AnythingLLM admin account created"
+    if allm_api "/api/system/enable-multi-user" "" "{\"username\":\"$ANYTHINGLLM_ADMIN_USER\",\"password\":\"$ANYTHINGLLM_ADMIN_PASS\"}" | grep -q '"success":true\|"user"'; then
+        log_to_file "INFO" "AnythingLLM admin account created (user: $ANYTHINGLLM_ADMIN_USER)" && echo "AnythingLLM admin account created"
     else
-        log_to_file "WARN" "Failed to enable multi-user mode: $MULTIUSER_RESPONSE"
         warn "Could not create admin account automatically. You can set it up manually."
-        ANYTHINGLLM_ADMIN_USER=""
-        ANYTHINGLLM_ADMIN_PASS=""
+        ANYTHINGLLM_ADMIN_USER="" && ANYTHINGLLM_ADMIN_PASS=""
     fi
 fi
 echo ""

@@ -49,9 +49,10 @@ services:
       - --dtype=float16
       - --max-concurrent-requests=512
       - --max-batch-tokens=16384
+      - --max-client-batch-size=64
       - --pooling=cls
       - --auto-truncate
-      - --json-output
+      #- --json-output
     healthcheck:
       test: ["CMD", "curl", "-f", "-s", "http://localhost:80/health"]
       interval: 10s
