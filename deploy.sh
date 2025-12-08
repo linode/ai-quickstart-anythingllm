@@ -513,7 +513,7 @@ while true; do
         ANYTHINGLLM_READY=true
         break
     fi
-    if [ $ELAPSED -ge 30 ]; then
+    if [ $ELAPSED -ge 60 ]; then
         log_to_file "WARN" "AnythingLLM health check timeout after ${ELAPSED_STR}"
         warn "Timeout waiting for AnythingLLM health check. It may still be starting up."
         ANYTHINGLLM_READY=false
@@ -530,13 +530,14 @@ if [ "${ANYTHINGLLM_READY:-false}" = "true" ]; then
     # Helper for AnythingLLM API calls: allm_api <endpoint> <api_key> <json_data>
     allm_api() { ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -s -X POST 'http://localhost:3001$1' -H 'Content-Type: application/json' ${2:+-H \"Authorization: Bearer $2\"} -d '$3'" </dev/null 2>/dev/null || echo "{}"; }
 
-    # Generate API key, create workspace, add sample document, and update embeddings
+    # Generate API key, create workspace, upload sample document, and update embeddings
     API_KEY=$(allm_api "/api/system/generate-api-key" "" "{}" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
     if [ -n "$API_KEY" ]; then
         log_to_file "INFO" "AnythingLLM API key generated" && echo "API key generated"
-        if allm_api "/api/v1/workspace/new" "$API_KEY" '{"name":"RAG Example","similarityThreshold":0.7,"topN":5}' | grep -q '"workspace"'; then
+        if allm_api "/api/v1/workspace/new" "$API_KEY" '{"name":"RAG Example","openAiTemp":0.2,"similarityThreshold":0.7,"openAiPrompt": "Given the following conversation, relevant context, and a follow up question, reply with an answer to the current question the user is asking. Return only your response to the question given the above information following the users instructions as needed. Do NOT make up, invent, fabricate, guess and assume facts. If information is unavailable, incomplete, ambiguous, or conflicting, state clearly that you do not know.","topN":4}' | grep -q '"workspace"'; then
             log_to_file "INFO" "Default workspace 'RAG Example' created" && echo "Default workspace created"
-            DOC_LOC=$(allm_api "/api/v1/document/upload-link" "$API_KEY" '{"link":"https://www.kdnuggets.com/anythingllm-the-llm-application-youve-been-waiting-for","addToWorkspaces":"rag-example"}' | grep -o '"location":"[^"]*"' | head -1 | cut -d'"' -f4)
+            # Download PDF and upload via multipart form (matching anythingllm-api.sh logic)
+            DOC_LOC=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -sL -o /tmp/sample.pdf 'https://www.linode.com/linode/en/documents/white-paper/forrester-distributed-cloud-taking-ai-to-the-edge.pdf' && curl -s -X POST 'http://localhost:3001/api/v1/document/upload' -H 'accept: application/json' -H 'Authorization: Bearer ${API_KEY}' -H 'Content-Type: multipart/form-data' -F 'file=@/tmp/sample.pdf;type=application/pdf' -F 'addToWorkspaces=rag-example' -F 'metadata={\"title\": \"Distributed Cloud: Taking AI to the Edge\", \"docAuthor\": \"Forrester\", \"description\": \"Forrester report on distributed cloud and AI at the edge\", \"docSource\": \"Linode\"}'" </dev/null 2>/dev/null | grep -o '"location":"[^"]*"' | head -1 | cut -d'"' -f4)
             if [ -n "$DOC_LOC" ]; then
                 log_to_file "INFO" "Sample document uploaded" && echo "Sample document added"
                 allm_api "/api/v1/workspace/rag-example/update-embeddings" "$API_KEY" "{\"adds\":[\"$DOC_LOC\"]}" | grep -q '"workspace"' && log_to_file "INFO" "Document embedded" && echo "Document embedded in workspace"

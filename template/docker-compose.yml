@@ -82,10 +82,11 @@ services:
       - GENERIC_OPEN_AI_BASE_PATH=http://vllm:8000/v1
       - GENERIC_OPEN_AI_MODEL_PREF=openai/gpt-oss-20b
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=16384
+      - GENERIC_OPEN_AI_API_KEY=sk-dammy-123
       - EMBEDDING_ENGINE=localai
       - EMBEDDING_BASE_PATH=http://embedding:80
       - EMBEDDING_MODEL_PREF=BAAI/bge-m3
-      - EMBEDDING_MODEL_MAX_CHUNK_LENGTH=8192
+      - EMBEDDING_MODEL_MAX_CHUNK_LENGTH=254
       - VECTOR_DB=pgvector
       - PGVECTOR_CONNECTION_STRING="postgresql://anythingllm:anythingllm@pgvector:5432/anythingllm"
       - DATABASE_URL=postgresql://anythingllm:anythingllm@pgvector:5432/anythingllm
