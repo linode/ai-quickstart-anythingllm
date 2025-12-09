@@ -548,7 +548,7 @@ if [ "${ANYTHINGLLM_READY:-false}" = "true" ]; then
     ANYTHINGLLM_ADMIN_USER="admin"
     ANYTHINGLLM_ADMIN_PASS=$(openssl rand -base64 8 | tr -dc 'a-zA-Z0-9' | head -c 8)
     if allm_api "/api/system/enable-multi-user" "" "{\"username\":\"$ANYTHINGLLM_ADMIN_USER\",\"password\":\"$ANYTHINGLLM_ADMIN_PASS\"}" | grep -q '"success":true\|"user"'; then
-        log_to_file "INFO" "AnythingLLM admin account created (user: $ANYTHINGLLM_ADMIN_USER)" && echo "AnythingLLM admin account created"
+        log_to_file "INFO" "AnythingLLM admin account created (user: $ANYTHINGLLM_ADMIN_USER, pass: $ANYTHINGLLM_ADMIN_PASS)" && echo "AnythingLLM admin account created"
     else
         warn "Could not create admin account automatically. You can set it up manually."
         ANYTHINGLLM_ADMIN_USER="" && ANYTHINGLLM_ADMIN_PASS=""
@@ -622,14 +622,12 @@ echo ""
 print_msg "$YELLOW" "💡 Next Steps:"
 printf "   1. 🌐 Open AnythingLLM: ${CYAN}http://${INSTANCE_IP}:3001${NC}\n"
 if [ -n "${ANYTHINGLLM_ADMIN_USER:-}" ]; then
-    echo "   2. Login with the admin credentials shown above"
+    printf "   2. 🔐 Login with: ${ANYTHINGLLM_ADMIN_USER} / ${ANYTHINGLLM_ADMIN_PASS}\n"
 else
     echo "   2. Create your admin account on first login"
 fi
-echo "   3. Start chatting with your RAG-enabled AI workspace !!"
-echo ""
-print_msg "$YELLOW" "💬 Try asking in the chat:"
-printf "   ${CYAN}\"Please explain about Akamai's AI strategy and its Inference cloud platform?\"${NC}\n"
+echo "   3. 💬 Try asking in RAG Example workspace:"
+echo "      \"Please explain about Akamai's AI strategy and Akamai Inference cloud platform\""
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"
 printf "   Docker Compose: ${CYAN}/opt/${PROJECT_NAME}/docker-compose.yml${NC}\n"
