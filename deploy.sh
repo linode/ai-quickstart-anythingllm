@@ -627,7 +627,7 @@ else
     echo "   2. Create your admin account on first login"
 fi
 echo "   3. 💬 Try asking in RAG Example workspace:"
-echo "      \"Please explain about Akamai's AI strategy and Akamai Inference cloud platform\""
+echo "      \"please explain about Akamai's AI strategy and its Inference cloud platform ?\""
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"
 printf "   Docker Compose: ${CYAN}/opt/${PROJECT_NAME}/docker-compose.yml${NC}\n"
