@@ -534,10 +534,9 @@ if [ "${ANYTHINGLLM_READY:-false}" = "true" ]; then
     API_KEY=$(allm_api "/api/system/generate-api-key" "" "{}" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
     if [ -n "$API_KEY" ]; then
         log_to_file "INFO" "AnythingLLM API key generated" && echo "API key generated"
-        if allm_api "/api/v1/workspace/new" "$API_KEY" '{"name":"RAG Example","openAiTemp":0.2,"similarityThreshold":0.7,"openAiPrompt": "Given the following conversation, relevant context, and a follow up question, reply with an answer to the current question the user is asking. Return only your response to the question given the above information following the users instructions as needed. Do NOT make up, invent, fabricate, guess and assume facts. If information is unavailable, incomplete, ambiguous, or conflicting, state clearly that you do not know.","topN":4}' | grep -q '"workspace"'; then
+        if allm_api "/api/v1/workspace/new" "$API_KEY" '{"name":"RAG Example","openAiTemp":0.3,"similarityThreshold":0.7,"openAiPrompt": "You are a helpful AI assistant specialized in answering user queries using the retrieved context documents.  Answer questions clearly and accurately, strictly based on the provided context.  Do NOT make up, invent, fabricate, guess and assume facts. If information is unavailable, incomplete, ambiguous, or conflicting, state clearly that you do not know information. Use bullet points or structured format where helpful.","topN":4}' | grep -q '"workspace"'; then
             log_to_file "INFO" "Default workspace 'RAG Example' created" && echo "Default workspace created"
-            # Download PDF and upload via multipart form (matching anythingllm-api.sh logic)
-            DOC_LOC=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "curl -sL -o /tmp/sample.pdf 'https://www.linode.com/linode/en/documents/white-paper/forrester-distributed-cloud-taking-ai-to-the-edge.pdf' && curl -s -X POST 'http://localhost:3001/api/v1/document/upload' -H 'accept: application/json' -H 'Authorization: Bearer ${API_KEY}' -H 'Content-Type: multipart/form-data' -F 'file=@/tmp/sample.pdf;type=application/pdf' -F 'addToWorkspaces=rag-example' -F 'metadata={\"title\": \"Distributed Cloud: Taking AI to the Edge\", \"docAuthor\": \"Forrester\", \"description\": \"Forrester report on distributed cloud and AI at the edge\", \"docSource\": \"Linode\"}'" </dev/null 2>/dev/null | grep -o '"location":"[^"]*"' | head -1 | cut -d'"' -f4)
+            DOC_LOC=$(allm_api "/api/v1/document/upload-link" "$API_KEY" '{"link":"https://raw.githubusercontent.com/linode/ai-quickstart-anythingllm/refs/heads/main/documents/akamai_blog_ai-edge-all-you-need.md","addToWorkspaces":"rag-example"}' | grep -o '"location":"[^"]*"' | head -1 | cut -d'"' -f4)
             if [ -n "$DOC_LOC" ]; then
                 log_to_file "INFO" "Sample document uploaded" && echo "Sample document added"
                 allm_api "/api/v1/workspace/rag-example/update-embeddings" "$API_KEY" "{\"adds\":[\"$DOC_LOC\"]}" | grep -q '"workspace"' && log_to_file "INFO" "Document embedded" && echo "Document embedded in workspace"
@@ -628,6 +627,9 @@ else
     echo "   2. Create your admin account on first login"
 fi
 echo "   3. Start chatting with your RAG-enabled AI workspace !!"
+echo ""
+print_msg "$YELLOW" "💬 Try asking in the chat:"
+printf "   ${CYAN}\"Please explain about Akamai's AI strategy and its Inference cloud platform?\"${NC}\n"
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"
 printf "   Docker Compose: ${CYAN}/opt/${PROJECT_NAME}/docker-compose.yml${NC}\n"

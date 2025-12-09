@@ -82,6 +82,7 @@ services:
       - GENERIC_OPEN_AI_BASE_PATH=http://vllm:8000/v1
       - GENERIC_OPEN_AI_MODEL_PREF=openai/gpt-oss-20b
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=16384
+      - GENERIC_OPEN_AI_MAX_TOKENS=2048
       - GENERIC_OPEN_AI_API_KEY=sk-dammy-123
       - EMBEDDING_ENGINE=localai
       - EMBEDDING_BASE_PATH=http://embedding:80
