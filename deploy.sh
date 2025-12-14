@@ -482,13 +482,13 @@ scroll_up 8
 CONTAINER_CHECK=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker ps --format '{{.Names}}'" </dev/null 2>/dev/null || echo "")
 
 CONTAINERS_OK=true
-for container in vllm embedding pgvector caddy; do
+for container in vllm embedding pgvector; do
     echo "$CONTAINER_CHECK" | grep -q "$container" || CONTAINERS_OK=false
 done
 
 if [ "$CONTAINERS_OK" = true ]; then
-    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector, Caddy running"
-    echo "All containers are running (vLLM, TEI, pgvector, Caddy)"
+    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector running"
+    echo "Base containers are running (vLLM, TEI, pgvector)"
 else
     log_to_file "WARN" "Container check incomplete: $CONTAINER_CHECK"
     warn "Some containers may still be starting. Check manually with: docker ps"
