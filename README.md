@@ -36,10 +36,11 @@ That's it! The script will download required files and guide you through the int
 ### Docker Containers
 | | Service | Description |
 |:--:|:--|:--|
+| <img src="https://caddyserver.com/resources/images/favicon.png" alt="Caddy" width="32"/> | **Caddy** | Reverse proxy with automatic HTTPS (port 80/443) |
 | <img src="https://raw.githubusercontent.com/vllm-project/media-kit/main/vLLM-Logo.png" alt="vLLM" width="32"/> | **vLLM** | High-throughput LLM inference engine with OpenAI-compatible API (port 8000, internal) |
 | <img src="https://huggingface.co/front/assets/huggingface_logo-noborder.svg" alt="TEI" width="32"/> | **Text Embeddings Inference** | GPU-accelerated embedding service using BAAI/bge-m3 model (port 8001, internal) |
 | <img src="https://wiki.postgresql.org/images/a/a4/PostgreSQL_logo.3colors.svg" alt="pgvector" width="32"/> | **pgvector** | PostgreSQL with vector similarity search extension for RAG storage (port 5432, internal) |
-| <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/anything-llm.png" alt="AnythingLLM" width="32"/> | **AnythingLLM** | Full-stack AI application with RAG, document chat, agents, and multi-user support (port 3001) |
+| <img src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/anything-llm.png" alt="AnythingLLM" width="32"/> | **AnythingLLM** | Full-stack AI application with RAG, document chat, agents, and multi-user support (port 3001, internal) |
 
 ### Models
 
@@ -138,7 +139,7 @@ Once complete, you'll see:
 ✅ Your AI LLM instance is now running!
 
 🌐 Access URLs:
-   AnythingLLM:  http://<instance-ip>:3001
+   AnythingLLM:  https://<ip-label>.ip.linodeusercontent.com
 
 🔐 Access Credentials:
    SSH:   ssh -i /path/to/your/key root@<instance-ip>
@@ -149,8 +150,11 @@ Once complete, you'll see:
    # Install script called by cloud-init service
    /opt/ai-quickstart-anythingllm/install.sh
 
-   # docker compose file calle by systemctl at startup
+   # docker compose file called by systemctl at startup
    /opt/ai-quickstart-anythingllm/docker-compose.yml
+
+   # Caddy reverse proxy configuration
+   /opt/ai-quickstart-anythingllm/Caddyfile
 
    # service definition
    /etc/systemd/system/ai-quickstart-anythingllm.service
@@ -184,19 +188,20 @@ ai-quickstart-anythingllm/
 └── template/
     ├── cloud-init.yaml          # Cloud-init configuration
     ├── docker-compose.yml       # Docker Compose configuration
+    ├── Caddyfile                # Caddy reverse proxy configuration
     └── install.sh               # Post-boot installation script
 ```
 
 -----------------------------------------
 ## 🔒 Security
 
-**⚠️ IMPORTANT**: By default, port 3001 (AnythingLLM) is exposed to the internet
+**⚠️ IMPORTANT**: By default, ports 80 and 443 are exposed to the internet
 
 ### Immediate Security Steps
 
 1. **Configure Cloud Firewall** (Recommended)
    - Create Linode Cloud Firewall
-   - Restrict access to port 3001 by source IP
+   - Restrict access to ports 80/443 by source IP
    - Allow SSH (port 22) from trusted IPs only
 
 2. **SSH Security**

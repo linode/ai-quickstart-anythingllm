@@ -45,7 +45,7 @@ _setup_required_files() {
     REMOTE_TEMP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-$$"
 
     QUICKSTART_TOOLS_PATH=$(_dl "$SCRIPT_DIR" "script/quickstart_tools.sh" "$TOOLS_RAW_BASE" "$REMOTE_TEMP_DIR") || { echo "ERROR: Failed to get quickstart_tools.sh" >&2; exit 1; }
-    local f; for f in cloud-init.yaml docker-compose.yml install.sh; do
+    local f; for f in cloud-init.yaml docker-compose.yml install.sh Caddyfile; do
         _dl "$SCRIPT_DIR" "template/$f" "$REPO_RAW_BASE" "$REMOTE_TEMP_DIR" >/dev/null || { echo "ERROR: Failed to get $f" >&2; exit 1; }
     done
     TEMPLATE_DIR="${SCRIPT_DIR}/template"; [ -d "$TEMPLATE_DIR" ] && [ -f "$TEMPLATE_DIR/cloud-init.yaml" ] || TEMPLATE_DIR="${REMOTE_TEMP_DIR}/template"
@@ -132,21 +132,11 @@ _error_exit_with_cleanup() {
 #==============================================================================
 show_banner
 
-print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-print_msg "$BOLD" "          AI Quickstart : RAG Stack with AnythingLLM"
-print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+print_msg "$BOLD" "     AI Quickstart : RAG Stack with AnythingLLM"
+print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-print_msg "$YELLOW" "This script will:"
-echo "  • Deploy a fully configured GPU instance in your linode account with:"
-echo "    - Nvidia drivers"
-echo "    - Docker and Nvidia Container Toolkit"
-echo "    - vLLM (LLM inference server with openai/gpt-oss-20b)"
-echo "    - Text Embeddings Inference (BAAI/bge-m3)"
-echo "    - pgvector (PostgreSQL vector database)"
-echo "    - AnythingLLM (RAG-enabled AI workspace)"
-echo ""
-print_msg "$GREEN" "Setup time: ~10-15 minutes"
-print_msg "$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+print_msg "$YELLOW" "Deploys a GPU instance with vLLM, AnythingLLM RAG stack (~10-15 min)"
 echo ""
 
 # before proceeding, ensure jq is installed
@@ -298,6 +288,12 @@ if [ ! -f "${TEMPLATE_DIR}/docker-compose.yml" ]; then
 fi
 DOCKER_COMPOSE_BASE64=$(base64 < "${TEMPLATE_DIR}/docker-compose.yml" | tr -d '\n')
 
+# Base64 encode Caddyfile
+if [ ! -f "${TEMPLATE_DIR}/Caddyfile" ]; then
+    error_exit "template/Caddyfile not found"
+fi
+CADDYFILE_BASE64=$(base64 < "${TEMPLATE_DIR}/Caddyfile" | tr -d '\n')
+
 # Base64 encode install.sh (need to add notify function)
 if [ ! -f "${TEMPLATE_DIR}/install.sh" ]; then
     error_exit "template/install.sh not found"
@@ -311,10 +307,11 @@ fi
 
 # Create temporary cloud-init file with replacements
 CLOUD_INIT_DATA=$(cat "${TEMPLATE_DIR}/cloud-init.yaml" | \
-    sed "s|PROJECT_NAME_PLACEHOLDER|${PROJECT_NAME}|g" | \
-    sed "s|INSTANCE_LABEL_PLACEHOLDER|${INSTANCE_LABEL}|g" | \
-    sed "s|DOCKER_COMPOSE_BASE64_CONTENT_PLACEHOLDER|${DOCKER_COMPOSE_BASE64}|g" | \
-    sed "s|INSTALL_SH_BASE64_CONTENT_PLACEHOLDER|${INSTALL_SH_BASE64}|g")
+    sed "s|_PROJECT_NAME_PLACEHOLDER_|${PROJECT_NAME}|g" | \
+    sed "s|_INSTANCE_LABEL_PLACEHOLDER_|${INSTANCE_LABEL}|g" | \
+    sed "s|_CADDYFILE_BASE64_CONTENT_PLACEHOLDER_|${CADDYFILE_BASE64}|g" | \
+    sed "s|_DOCKER_COMPOSE_BASE64_CONTENT_PLACEHOLDER_|${DOCKER_COMPOSE_BASE64}|g" | \
+    sed "s|_INSTALL_SH_BASE64_CONTENT_PLACEHOLDER_|${INSTALL_SH_BASE64}|g")
 
 #==============================================================================
 # Show Confirmation Prompt
@@ -485,13 +482,13 @@ scroll_up 8
 CONTAINER_CHECK=$(ssh "${SSH_OPTS[@]}" "root@${INSTANCE_IP}" "docker ps --format '{{.Names}}'" </dev/null 2>/dev/null || echo "")
 
 CONTAINERS_OK=true
-for container in vllm embedding pgvector; do
+for container in vllm embedding pgvector caddy; do
     echo "$CONTAINER_CHECK" | grep -q "$container" || CONTAINERS_OK=false
 done
 
 if [ "$CONTAINERS_OK" = true ]; then
-    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector running"
-    echo "All containers are running (vLLM, TEI, pgvector)"
+    log_to_file "INFO" "Docker containers verified: vLLM, TEI, pgvector, Caddy running"
+    echo "All containers are running (vLLM, TEI, pgvector, Caddy)"
 else
     log_to_file "WARN" "Container check incomplete: $CONTAINER_CHECK"
     warn "Some containers may still be starting. Check manually with: docker ps"
@@ -596,8 +593,9 @@ echo "   IP Address:     $INSTANCE_IP"
 echo "   Region:         $SELECTED_REGION"
 echo "   Instance Type:  $SELECTED_TYPE"
 echo ""
+INSTANCE_IP_LABEL=$(echo "$INSTANCE_IP" | tr . -)
 print_msg "$CYAN" "🌐 AnythingLLM Access:"
-printf "   URL:         ${BOLD}http://${INSTANCE_IP}:3001${NC}\n"
+printf "   URL:         ${BOLD}https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com${NC}\n"
 if [ -n "${ANYTHINGLLM_ADMIN_USER:-}" ]; then
     echo "   Username:    ${ANYTHINGLLM_ADMIN_USER}"
     echo "   Password:    ${ANYTHINGLLM_ADMIN_PASS}"
@@ -606,12 +604,8 @@ else
 fi
 echo ""
 print_msg "$CYAN" "🔐 SSH Access:"
-if [ -n "${NEW_KEY_PATH:-}" ]; then
-    echo "   SSH:         ssh -i ${NEW_KEY_PATH} root@${INSTANCE_IP}"
-    echo "   SSH Key:     ${NEW_KEY_PATH}"
-else
-    echo "   SSH:         ssh root@${INSTANCE_IP}"
-fi
+echo "   SSH:         ssh -i ${SSH_KEY_FILE} root@${INSTANCE_IP}"
+echo "   SSH Key:     ${SSH_KEY_FILE}"
 echo "   Root Pass:   ${INSTANCE_PASSWORD}"
 echo ""
 print_msg "$CYAN" "📋 Execution Log:"
@@ -620,7 +614,7 @@ echo ""
 print_msg "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 print_msg "$YELLOW" "💡 Next Steps:"
-printf "   1. 🌐 Open AnythingLLM: ${CYAN}http://${INSTANCE_IP}:3001${NC}\n"
+printf "   1. 🌐 Open AnythingLLM: ${CYAN}https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com${NC}\n"
 if [ -n "${ANYTHINGLLM_ADMIN_USER:-}" ]; then
     printf "   2. 🔐 Login with: ${ANYTHINGLLM_ADMIN_USER} / ${ANYTHINGLLM_ADMIN_PASS}\n"
 else
@@ -631,11 +625,11 @@ echo "      \"please explain about Akamai's AI strategy and its Inference cloud 
 echo ""
 print_msg "$YELLOW" "📁 Check AI Stack Configuration:"
 printf "   Docker Compose: ${CYAN}/opt/${PROJECT_NAME}/docker-compose.yml${NC}\n"
-echo "   Services: vLLM (8000) + TEI (8001) + pgvector (5432) + AnythingLLM (3001)"
+echo "   Services: Caddy (80/443) + vLLM (8000) + TEI (8001) + pgvector (5432) + AnythingLLM (3001)"
 echo ""
 echo ""
 echo "🚀 Enjoy your RAG Stack with AnythingLLM on Akamai Cloud !!"
 echo ""
 echo ""
 log_to_file "INFO" "Deployment completed successfully"
-log_to_file "INFO" "Instance URL: http://${INSTANCE_IP}:3001"
+log_to_file "INFO" "Instance URL: https://${INSTANCE_IP_LABEL}.ip.linodeusercontent.com"
